@@ -12,20 +12,10 @@
  * `--all` also lists the symbols that spill but stay inside the margin (harmless, but worth knowing about).
  */
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright-core';
+import { parseArgs } from './lib/args.mjs';
+import { launchBrowser } from './lib/browser.mjs';
 
-const args = process.argv.slice(2);
-const opts = {};
-for (let i = 0; i < args.length; i++) {
-  if (!args[i].startsWith('--')) continue;
-  const key = args[i].slice(2);
-  const next = args[i + 1];
-  if (next === undefined || next.startsWith('--')) opts[key] = true;
-  else {
-    opts[key] = next;
-    i++;
-  }
-}
+const { opts } = parseArgs(process.argv.slice(2));
 
 const url = String(opts.url ?? 'http://localhost:5173');
 const filter = opts.filter ? String(opts.filter) : '';
@@ -34,18 +24,7 @@ const fs = `/@fs/${root.replace(/^\//, '')}`;
 const PROBE = 64; // design units of room drawn around each box
 const ALPHA = 60; // ignore the faintest antialiasing
 
-async function launch() {
-  for (const channel of ['msedge', 'chrome', undefined]) {
-    try {
-      return await chromium.launch({ channel, headless: true });
-    } catch {
-      /* try next */
-    }
-  }
-  throw new Error('No browser available. Install Edge/Chrome or run: npx playwright install chromium');
-}
-
-const browser = await launch();
+const browser = await launchBrowser();
 const page = await (await browser.newContext()).newPage();
 page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
 try {

@@ -84,6 +84,14 @@ describe('ScatterSession.fill', () => {
     expect(swept).toEqual(whole);
   });
 
+  it('repeats the same patch for the same seed, and a different one for another seed', () => {
+    const key = (s: NewSymbol) => `${s.asset}@${s.x.toFixed(2)},${s.y.toFixed(2)}`;
+    const patch = (seed: number) => session({ seed }).fill(1000, 750, 300).map(key).sort();
+    expect(patch(7).length).toBeGreaterThan(50);
+    expect(patch(7)).toEqual(patch(7));
+    expect(patch(7)).not.toEqual(patch(8));
+  });
+
   it('never packs symbols of the same kind tighter than 0.45 × spacing', () => {
     const out = session().fill(1000, 750, 400);
     expect(out.length).toBeGreaterThan(100);

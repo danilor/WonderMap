@@ -13,6 +13,9 @@ import type { Probe } from './fakeCanvas';
 
 beforeAll(installFakeCanvas);
 
+/** Drawing every variant of every symbol takes about 5 s on a busy machine, which is Vitest's default limit. */
+const HEAVY = { timeout: 60_000 };
+
 /** Asserts that a drawing painted something and did not feed the canvas rubbish. */
 function expectSound(label: string, probe: Probe): void {
   expect(probe.problems, `${label}: NaN / Infinity / broken colors`).toEqual([]);
@@ -20,7 +23,7 @@ function expectSound(label: string, probe: Probe): void {
 }
 
 describe('symbols', () => {
-  it('draw every variant without errors and deterministically', () => {
+  it('draw every variant without errors and deterministically', HEAVY, () => {
     for (const def of symbols) {
       const [w, h] = def.size;
       for (let variant = 0; variant < def.variants; variant++) {
@@ -34,7 +37,7 @@ describe('symbols', () => {
     }
   });
 
-  it('look different from variant to variant (the variants are real)', () => {
+  it('look different from variant to variant (the variants are real)', HEAVY, () => {
     const rich = symbols.filter((s) => s.variants > 1);
     expect(rich.length).toBeGreaterThan(0);
     let identical = 0;

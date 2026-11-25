@@ -7,7 +7,8 @@ in `client/` or `server/` knows how any single illustration is drawn.
 
 Adding or changing art therefore never requires touching app code: drop a file in the right folder,
 open the gallery (`http://localhost:5173/#/gallery`) and it is already there. It also shows up in the
-editor's library automatically.
+editor's library automatically. Finish with `npm run assets`, which redraws the picture catalog
+[ASSETS.md](../ASSETS.md) (see [Look at your work](#look-at-your-work)).
 
 ## Folder map
 
@@ -157,7 +158,7 @@ npm run shot -- "http://localhost:5173/#/gallery?category=sea&zoom=2&bg=sea" out
 `debug=1` draws the design box and the anchor point, which is the fastest way to verify that
 nothing leaks outside the box and that the anchor sits on the ground.
 
-Two helpers drive a real browser (Edge or Chrome, through `playwright-core`; no download needed):
+Three helpers drive a real browser (Edge or Chrome, through `playwright-core`; no download needed):
 
 ```bash
 # 1. Screenshot any page: npm run shot -- <url> <out.png> [--size 1600x1000] [--wait 800] [--selector "#id"] [--dpr 1]
@@ -167,7 +168,23 @@ npm run shot -- "http://localhost:5173/#/gallery?category=sea&zoom=2&bg=sea" out
 npm run check:art                           # every symbol and variant
 npm run check:art -- --filter serpent.      # only symbol ids that start with this text
 npm run check:art -- --all                  # also list harmless spills that stay inside the margin
+
+# 3. Redraw the picture catalog ASSETS.md (starts its own Vite server; about 20 s)
+npm run assets                              # everything, and removes the pictures of assets that are gone
+npm run assets -- --only symbol,brush       # just these kinds: terrain symbol brush path label font theme frame
+npm run assets -- --filter serpent          # just the assets whose id contains this text
 ```
+
+### Keep ASSETS.md current
+
+[ASSETS.md](../ASSETS.md) shows a picture of every asset, drawn with the app's own engine into
+`docs/assets/`. After **any** change to the art (a new or edited symbol, brush, terrain, path, label
+style, font, theme or frame), run `npm run assets` and commit `ASSETS.md` and `docs/assets/` together
+with the change. A unit test compares them with the art and fails with a message that tells you to
+run it, so a stale catalog cannot be committed by accident (`npm test`).
+
+The partial runs (`--only`, `--filter`) are for looking at a few pictures while you work: they never
+rewrite `ASSETS.md`, so finish with a full `npm run assets` before you commit.
 
 ## Quality bar
 

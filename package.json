@@ -21,7 +21,8 @@
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run build && playwright test --config e2e/playwright.config.ts",
     "shot": "node tools/screenshot.mjs",
-    "check:art": "node tools/check-art.mjs"
+    "check:art": "node tools/check-art.mjs",
+    "assets": "node tools/assets.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",

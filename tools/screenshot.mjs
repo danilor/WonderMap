@@ -9,23 +9,10 @@
  */
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { chromium } from 'playwright-core';
+import { parseArgs } from './lib/args.mjs';
+import { launchBrowser } from './lib/browser.mjs';
 
-const args = process.argv.slice(2);
-const positional = [];
-const opts = {};
-for (let i = 0; i < args.length; i++) {
-  const a = args[i];
-  if (a.startsWith('--')) {
-    const key = a.slice(2);
-    const next = args[i + 1];
-    if (next === undefined || next.startsWith('--')) opts[key] = true;
-    else {
-      opts[key] = next;
-      i++;
-    }
-  } else positional.push(a);
-}
+const { positional, opts } = parseArgs(process.argv.slice(2));
 
 const [url, out = '.screenshots/shot.png'] = positional;
 if (!url) {
@@ -35,18 +22,7 @@ if (!url) {
 
 const [width, height] = String(opts.size ?? '1600x1000').split('x').map(Number);
 
-async function launch() {
-  for (const channel of ['msedge', 'chrome', undefined]) {
-    try {
-      return await chromium.launch({ channel, headless: true });
-    } catch {
-      /* try next */
-    }
-  }
-  throw new Error('No browser available. Install Edge/Chrome or run: npx playwright install chromium');
-}
-
-const browser = await launch();
+const browser = await launchBrowser();
 const context = await browser.newContext({
   viewport: { width, height },
   deviceScaleFactor: Number(opts.dpr ?? 1),

@@ -1,29 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { MapTheme, ResolvedSymbol } from '@wondermap/illustrations';
 import { drawSymbol } from '../engine/sprites/spriteCache';
-import { drawBackdrop } from '../utils/backdrop';
-import type { Backdrop } from '../utils/backdrop';
-
-/** Ground that suits a symbol in its thumbnail: sea creatures on water, cacti on sand, and so on. */
-export function backdropFor(def: Pick<ResolvedSymbol, 'category' | 'placement'>): Backdrop {
-  if (def.placement === 'sea') return 'sea';
-  switch (def.category) {
-    case 'desert':
-      return 'sand';
-    case 'ice':
-      return 'snow';
-    case 'swamp':
-      return 'swamp';
-    case 'volcanic':
-      return 'stone';
-    case 'sea':
-      return 'sea';
-    case 'decor':
-      return 'paper';
-    default:
-      return 'grass';
-  }
-}
+import { backdropFor, drawBackdrop } from '../utils/backdrop';
 
 interface Props {
   def: ResolvedSymbol;

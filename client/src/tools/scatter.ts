@@ -23,6 +23,8 @@ export interface ScatterSettings {
   height: number;
   /** Is there land under this point? Used to honour `placement` hints. */
   landAt(x: number, y: number): boolean;
+  /** Fixes the look of the whole patch. Omitted in the editor, where every stroke gets a fresh one. */
+  seed?: number;
 }
 
 interface Candidate {
@@ -32,7 +34,7 @@ interface Candidate {
 
 export class ScatterSession {
   private readonly cell: number;
-  private readonly seed = (Math.random() * 0xffffffff) >>> 0;
+  private readonly seed: number;
   private readonly candidates: Candidate[];
   private readonly totalWeight: number;
   private readonly attempted = new Set<number>();
@@ -43,6 +45,7 @@ export class ScatterSession {
 
   constructor(settings: ScatterSettings, existing: readonly MapSymbol[]) {
     this.settings = settings;
+    this.seed = settings.seed ?? (Math.random() * 0xffffffff) >>> 0;
     const { brush } = settings;
     this.cell = Math.max(8, brush.spacing * settings.scale);
     this.candidates = brush.items.flatMap((item) => {

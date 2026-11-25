@@ -1,8 +1,29 @@
 import { terrainById } from '@wondermap/illustrations';
-import type { MapTheme } from '@wondermap/illustrations';
+import type { MapTheme, ResolvedSymbol } from '@wondermap/illustrations';
 import { getTerrainTile, tileResolution } from '../engine/terrain/tiles';
 
 export type Backdrop = 'none' | 'sea' | 'paper' | 'grass' | 'earth' | 'sand' | 'snow' | 'swamp' | 'stone';
+
+/** Ground that suits a symbol in its thumbnail: sea creatures on water, cacti on sand, and so on. */
+export function backdropFor(def: Pick<ResolvedSymbol, 'category' | 'placement'>): Backdrop {
+  if (def.placement === 'sea') return 'sea';
+  switch (def.category) {
+    case 'desert':
+      return 'sand';
+    case 'ice':
+      return 'snow';
+    case 'swamp':
+      return 'swamp';
+    case 'volcanic':
+      return 'stone';
+    case 'sea':
+      return 'sea';
+    case 'decor':
+      return 'paper';
+    default:
+      return 'grass';
+  }
+}
 
 export const BACKDROPS: readonly { id: Backdrop; label: string }[] = [
   { id: 'none', label: 'Transparent' },

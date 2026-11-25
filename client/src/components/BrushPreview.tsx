@@ -2,8 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { MapTheme, ResolvedBrush } from '@wondermap/illustrations';
 import { symbolById } from '@wondermap/illustrations';
 import { drawSymbol } from '../engine/sprites/spriteCache';
-import { drawBackdrop } from '../utils/backdrop';
-import { backdropFor } from './SymbolThumb';
+import { backdropFor, drawBackdrop } from '../utils/backdrop';
 
 interface Props {
   brush: ResolvedBrush;
