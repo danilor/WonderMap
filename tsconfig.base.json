@@ -1,0 +1,16 @@
+{
+  "$comment": "Shared strictness settings. Each workspace extends this and adds its own module/lib settings.",
+  "compilerOptions": {
+    "target": "es2023",
+    "strict": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false,
+    "forceConsistentCasingInFileNames": true
+  }
+}

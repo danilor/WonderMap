@@ -1,0 +1,152 @@
+/* ==========================================================================================
+   Home page: hero banner and the library of saved maps.
+   ========================================================================================== */
+
+.home {
+  height: 100%;
+  overflow-y: auto;
+  background: radial-gradient(1200px 500px at 50% -120px, #3b2c18 0%, var(--wm-bg) 70%);
+  color: var(--wm-text);
+}
+
+.home-hero {
+  padding: 3.2rem 0 2.2rem;
+  border-bottom: 1px solid var(--wm-border);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.25) 100%);
+}
+
+.home-hero-inner,
+.home-main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+.home-title {
+  margin: 0 0 0.4rem;
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--wm-gold);
+  text-shadow: 0 2px 0 #000, 0 0 30px rgba(217, 164, 65, 0.4);
+}
+
+.home-tagline {
+  max-width: 640px;
+  margin-bottom: 1.4rem;
+  font-size: 1.05rem;
+  color: var(--wm-muted);
+}
+
+.home-main {
+  padding-top: 1.6rem;
+  padding-bottom: 3rem;
+}
+
+.home-heading {
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+  color: var(--wm-gold-2);
+}
+
+.map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.1rem;
+}
+
+.map-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--wm-border);
+  background: var(--wm-panel);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.map-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--wm-gold);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), 0 0 18px rgba(217, 164, 65, 0.2);
+}
+
+.map-card-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  background: #1a1510;
+  color: #4a3b2b;
+  font-size: 3rem;
+  overflow: hidden;
+}
+
+.map-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.map-card-body {
+  padding: 0.6rem 0.85rem 0.15rem;
+  min-width: 0;
+}
+
+.map-card-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--wm-font-display);
+  font-size: 1.02rem;
+  color: var(--wm-gold-2);
+  text-decoration: none;
+}
+
+.map-card-meta {
+  font-size: 0.74rem;
+  color: var(--wm-muted);
+}
+
+.map-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.15rem;
+  padding: 0.1rem 0.5rem 0.5rem;
+}
+
+.map-card-actions .icon-btn {
+  text-decoration: none;
+}
+
+.map-card-actions .icon-btn.danger:hover {
+  color: #ff9a82;
+  border-color: #8a3a28;
+  background: rgba(196, 85, 45, 0.15);
+}
+
+.new-card {
+  min-height: 230px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  border: 2px dashed #5a4529;
+  background: transparent;
+  color: var(--wm-muted);
+  font-family: var(--wm-font-display);
+  font-size: 1.05rem;
+  box-shadow: none;
+}
+
+.new-card i {
+  font-size: 2.6rem;
+  color: var(--wm-gold);
+}
+
+.new-card:hover {
+  color: var(--wm-gold-2);
+  background: rgba(217, 164, 65, 0.06);
+}

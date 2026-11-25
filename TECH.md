@@ -1,0 +1,646 @@
+# WonderMap — Technical guide
+
+How WonderMap works and where to change things. Read this after the [README](README.md) (what it is, how to run
+it); see [PLAN.md](PLAN.md) for status and roadmap and [illustrations/README.md](illustrations/README.md) for the
+art-authoring guide.
+
+**Contents:** [1 Stack](#1-stack-and-versions) · [2 Layout](#2-repository-layout) · [3 Conventions](#3-conventions) ·
+[4 Coordinates](#4-coordinates-and-units) · [5 Illustrations](#5-the-illustrations-package) ·
+[6 Document model](#6-the-document-model) · [7 State and saving](#7-state-history-and-saving) ·
+[8 Rendering](#8-rendering) · [9 Tools and input](#9-tools-and-input) · [10 Interface](#10-user-interface) ·
+[11 Export](#11-image-export) · [12 Backend](#12-backend) · [13 Testing](#13-testing) ·
+[14 Workflow](#14-dev-workflow-and-tooling) · [15 Performance](#15-performance-and-limits) ·
+[16 Recipes](#16-extension-recipes) · [17 Limitations](#17-known-limitations)
+
+## 1. Stack and versions
+
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| Language | TypeScript ~7.0, strict | Shared settings in `tsconfig.base.json` |
+| Client | Vite 8, React 19, Bootstrap 5.3, react-bootstrap 2, Bootstrap Icons, Zustand 5 | Plain CSS on top of Bootstrap's CSS variables; no Sass build |
+| Drawing | Canvas 2D | All art and all rendering; no SVG, no DOM nodes per object, no WebGL |
+| Server | Node.js ≥ 20.19 (developed on 24), Express 5 | `tsx` in development, plain `tsc` for production |
+| Storage | JSON files on disk | `server/data/maps/` |
+| Fonts | `@fontsource/*` (SIL Open Font License) | Bundled, work offline |
+| Tests | Vitest 5, supertest, Playwright 1.65 | End-to-end tests drive the installed Edge |
+| Lint | oxlint 1.9x | Correctness rules as errors, React hooks rules, see [14.4](#144-lint-rules) |
+| Monorepo | npm workspaces | `illustrations`, `client`, `server` (plus `e2e` and `tools`, which are not workspaces) |
+
+## 2. Repository layout
+
+```
+WonderMap/
+├─ README.md  PLAN.md  TECH.md          documentation
+├─ package.json                          workspaces and the scripts you run
+├─ tsconfig.base.json  .oxlintrc.json  .editorconfig  .gitignore
+│
+├─ illustrations/                        ALL ARTWORK. Code only, no images. Imported as @wondermap/illustrations
+│  ├─ README.md                          how to make art (read this to add a creature)
+│  ├─ index.ts  catalog.ts  categories.ts
+│  ├─ kit/                               the drawing toolkit: rng, noise, colors, shapes, draw, texture, bounds…
+│  ├─ parts/                             shared building blocks reused by many symbols (trees, peaks, houses, ships…)
+│  ├─ symbols/<category>/                one file per illustration (or per family)
+│  ├─ brushes/  terrain/  paths/  labels/  themes/  frames/  fonts/
+│  └─ tests/                             draws every symbol on a fake canvas
+│
+├─ client/                               the web app (Vite + React)
+│  ├─ index.html  vite.config.ts
+│  ├─ public/samples/                    aldoria.wondermap.json, the sample world
+│  └─ src/
+│     ├─ main.tsx  App.tsx               entry point and page switch
+│     ├─ pages/                          HomePage (library) · EditorPage · GalleryPage (art browser) · home/*
+│     ├─ editor/                         the painting studio: MapView, TopBar, ToolRail, StatusBar, EdgeChips,
+│     │                                  LabelEditor, hooks (render loop, input, hotkeys, autosave), panels/, dialogs/
+│     ├─ components/                     small reusable widgets (Slider, Segmented, palette tiles, previews)
+│     ├─ tools/                          one file per tool + selection geometry, scatter, overlay helpers
+│     ├─ engine/                         rendering and geometry: camera, scene, MapRenderer, terrain/, sprites/,
+│     │                                  labels, paths, picking, symbols, paper, exportMap
+│     ├─ model/                          the document: types, document (create/expand/parse), ops, terrainLayer
+│     ├─ store/                          editorStore (Zustand) and history
+│     ├─ api/maps.ts                     fetch wrapper for the server
+│     ├─ utils/                          router, files (download/upload), backdrop (gallery backgrounds)
+│     ├─ styles/                         theme.css · editor.css · home.css
+│     └─ testing/fakeDom.ts              test helper
+│
+├─ server/                               Node.js backend
+│  ├─ src/                               index, app, config, storage, validation, routes/maps
+│  ├─ tests/                             API tests
+│  └─ data/                              saved maps (git-ignored, created on first run)
+│
+├─ e2e/                                  Playwright tests: tests/, support/ (fixtures, page helpers), config
+├─ tools/                                screenshot.mjs and check-art.mjs (dev helpers)
+├─ docs/images/                          screenshots used by the README
+├─ map_examples/                         the style references this project was built against
+└─ prompts/initial.md                    the original brief
+```
+
+Dependency direction: `client` imports `illustrations`; `illustrations` imports nothing from the app; `server`
+imports neither (it stores map documents as opaque JSON). `e2e` and `tools` only talk to a running app.
+
+### Data flow
+
+```
+pointer / keys ─▶ useMapInput ─▶ Tool ─▶ editorStore (document + history + selection) ─▶ useRenderLoop ─▶ MapRenderer ─▶ canvas
+                                              │                                              ▲ overlay canvas (tool previews)
+                                              └─▶ useAutosave ─▶ api/maps ─▶ Express ─▶ server/data/maps/<id>.json
+```
+
+## 3. Conventions
+
+- **TypeScript:** `erasableSyntaxOnly` (no `enum`, no constructor parameter properties), `verbatimModuleSyntax` (use
+  `import type`), `noUncheckedIndexedAccess` in the client. Server sources import with `.ts` extensions; the build
+  rewrites them.
+- **One concept per file**, named by what it is. React components are `PascalCase.tsx`, modules `camelCase.ts`, art
+  files `kebab-case.ts`. Unit tests sit next to the code (`*.test.ts`); the illustrations and the server keep theirs in
+  `tests/`.
+- **Pure logic is kept apart from the DOM.** `model/`, `store/history`, `engine/camera`, `engine/picking`,
+  `tools/scatter`, `tools/selectionGeometry` and friends run in plain Node and are unit-tested. Canvas and React code is
+  a thin layer on top.
+- **Documents are immutable.** Every edit makes a new object (see [6](#6-the-document-model)). The single deliberate
+  exception is the terrain byte array.
+- **Randomness is always seeded** (`rand` in art code, `combineSeed(...)` elsewhere). Never `Math.random()` or
+  `Date` in anything that is drawn: the same map must look identical in the editor, in an export and on another computer.
+- **Ids are forever.** Maps store symbol, terrain, path-style, label-style, theme and frame ids. Never rename or reuse a
+  published id; add a new one.
+- **Comments explain why**, not what. Public helpers carry a one-line doc comment.
+- **Magic numbers** live in named constants at the top of the file that owns them.
+
+## 4. Coordinates and units
+
+| Space | Unit | Where |
+|-------|------|-------|
+| **Map px** | One pixel of the map at ×1 export. Origin top-left, x right, y down | Everything in the document, tools, scene drawing |
+| **Terrain cell** | `CELL` = 4 map px | `TerrainLayer`; map sizes are multiples of 4 |
+| **CSS px** | Screen pixel before device-pixel-ratio | Pointer events, `PointerInfo.sx/sy`, hit slop, handles |
+| **Bitmap px** | Device pixel | Canvas backing store. `pixelScale = zoom × dpr` (or the export scale) |
+| **Design units** | Symbol design box at scale 1 = map px | Art code |
+
+The camera is `{ x, y, zoom }`: the map point at the centre of the view and the zoom (`0.05`–`8`). `engine/camera.ts`
+converts between screen and map space, zooms around a point, fits the map and clamps the camera so the map cannot be
+lost. Angles are radians. Tools get `PointerInfo.px` (map px per CSS px) so handles and hit areas keep a constant
+on-screen size.
+
+## 5. The illustrations package
+
+### 5.1 The contract
+
+Every kind of art is a plain definition object created with a `define…` helper from `illustrations/kit/define.ts`.
+`catalog.ts` finds the files by folder with `import.meta.glob`, so adding art never means editing a list.
+
+| Folder | Default export | Definition (see `kit/types.ts`) |
+|--------|----------------|---------------------------------|
+| `symbols/<category>/*.ts` | `SymbolDef` or `SymbolDef[]` | id, name, category, design-box `size`, `anchor`, `variants`, `layer`, `placement`, `rotatable`, `tags`, `draw(d)` |
+| `brushes/*.ts` | `BrushDef` or `BrushDef[]` | weighted symbol ids, spacing, scale range, jitter |
+| `terrain/*.ts` | `TerrainDef` | swatch, colours, tile size, group, `beach`, `texture(t)` painting ONE seamless tile |
+| `paths/*.ts` | `PathStyleDef` | default/min/max width, `taper`, `draw(p)` over the smoothed polyline |
+| `labels/*.ts` | `LabelStyleDef[]` | font id, size, spacing, halo |
+| `themes/*.ts` | `MapTheme` | sea, coast, paper, colour grade, label colours, default frame |
+| `frames/*.ts` | `FrameDef` | inset and `draw()` |
+| `fonts/index.ts` | `fonts` array | `@fontsource` imports plus `defineFont` |
+| `categories.ts` | list | id, name, icon, order, default layer |
+
+Files without a default export are helpers and ignored. `parts/` and `kit/` are outside the globbed folders.
+
+### 5.2 What the catalog guarantees
+
+The catalog throws while loading (so the gallery, the app and the tests fail loudly) when it finds a duplicate id,
+a symbol with an unknown category or a non-positive size, a brush that names an unknown symbol or category, a theme
+that names an unknown frame, or more than 250 terrains. It fills in defaults (`anchor [0.5, 0.92]`, 6 variants,
+order 100, placement `any`, layer from the category) and exports resolved definitions, lookups by id (`symbolById`,
+`terrainById`…), `symbolsInCategory`, `brushesInCategory`, `getTheme`, `getFrame` and `DEFAULT_THEME_ID`.
+
+### 5.3 Drawing rules that the engine relies on
+
+- **Design box and overdraw.** A symbol draws in `[0, w] × [0, h]`. Selection, bounds and stamping use that box. The
+  sprite bitmap is the box plus `overdraw(size)` on every side (`max(6, 8 % of the larger side)` design units); a soft
+  shadow that spills into the margin is kept, anything beyond is cut. `npm run check:art` finds such art.
+- **Anchor** is the normalized ground-contact point: the placement position and the depth-sort key.
+- **Layers.** `ground` (decals), `object`, `landmark` (settlements and towers: always above plain objects so a forest
+  cannot hide a town) and `air` (clouds, birds). Within `object` and `landmark`, symbols are sorted by the y of their
+  anchor.
+- **Light** comes from the top-left; outlines are warm dark ink.
+- **Seeds.** A sprite is drawn with `createRng(combineSeed(symbolId, variant))`, so every variant is stable forever.
+- **Theme grading.** Themes do not change the art; the sprite cache applies the theme's colour grade (saturation,
+  brightness, contrast, sepia, tint) to the finished bitmap. Art must not read the theme.
+- **A painter that throws** does not break the map: the sprite cache logs the error once and draws a red crossed box.
+
+### 5.4 Kit and parts
+
+`kit/` is the toolbox. Everything is re-exported from `@wondermap/illustrations/kit`:
+
+| File | Gives you |
+|------|-----------|
+| `rng.ts` | `createRng(seed)`, `combineSeed(...)`, `hashString` |
+| `noise.ts` | `valueNoise`, `fbm`, and the wrapping `tileNoise` / `tileFbm` for seamless textures |
+| `colors.ts` | `mix`, `lighten`, `darken`, `rgba`, `adjust`, `hsl`, and the colour grade (`gradeColor`, `gradePixels`) |
+| `shapes.ts` | `blob`, `wobble`, `jagged`, `chaikin`, `catmullRom`, `resample`, `ribbon` and other outline builders |
+| `draw.ts` | `shape`, `line`, `ellipse`, `taper`, `dot`, gradients, `clipped`, `groundShadow`, `hatch`, `stipple`, `shades(base)` |
+| `texture.ts` | Seamless-tile helpers for terrains: `noiseTile`, `ticks`, `speckles`, `blotches`, `waves`, `wrapped` |
+| `surface.ts` | `createCanvas`, `context2d` (the canvas factory, which the tests replace with a fake) |
+| `bounds.ts` | `overdraw(size)` |
+| `define.ts` | The `define…` helpers |
+
+`parts/` holds drawing recipes reused by several symbols, grouped by prefix: `nature-*` (plants, rocks, camps, farms),
+`relief-*` (mountains, volcanoes, caves, ice), `sea-*` (creatures, islets, waves, compass), `settle-*` (castles, towns,
+harbours, ruins), `ship-*`, plus `tree`, `peak` and `building`. A symbol is normally a small recipe that combines parts;
+a file can export an array to produce a whole family from one factory.
+
+### 5.5 Fonts
+
+`fonts/index.ts` imports the `@fontsource` CSS (this makes Vite bundle the font files), registers each family with
+`defineFont`, and exports `fontCss(id, size, weight, italic)` plus `ensureFonts()`. `ensureFonts()` loads every face and
+is awaited before an export, so exported labels never fall back to a system font. In the editor, labels are re-measured
+when fonts finish loading (`onFontsLoaded`).
+
+### 5.6 Package entry points
+
+`@wondermap/illustrations` exports the catalog, `ensureFonts`, `fontCss` and the types; `@wondermap/illustrations/kit`
+exports the toolkit (the engine uses it for RNG, canvas creation and colour grading). The package is consumed as
+TypeScript source; there is no build step.
+
+## 6. The document model
+
+`client/src/model/` is plain TypeScript with no DOM access and is fully unit-tested.
+
+```ts
+MapDocument {
+  schema: 1, id, name, kind: 'world', width, height, themeId, frameId, seed,
+  settings: { beaches, shallows, roughness (0..1), grid, gridSize },
+  terrain: TerrainLayer,
+  paths:   MapPath[]    { id, style, points[], width }
+  symbols: MapSymbol[]  { id, asset, x, y, scale, rotation, flip, variant }
+  labels:  MapLabel[]   { id, text, x, y, style, size, rotation, curve, spacing, color | null }
+  createdAt, updatedAt
+}
+```
+
+### 6.1 Terrain is a raster grid
+
+`TerrainLayer` is `{ cell, cols, rows, ids, data: Uint8Array, rev }`. Every 4 × 4 map-px cell holds one byte: `0` is the
+sea, `v > 0` means `ids[v - 1]`. `ids` is the map's own palette of terrain ids (at most 250), so adding or reordering
+terrains in the catalog never changes saved maps.
+
+Painting changes the array **in place** and bumps `rev`; this is the one mutable thing in an otherwise immutable
+document. The gesture start (`store.begin()` in the terrain tool) clones the array first, so earlier undo snapshots stay
+intact, and `store.touch()` tells subscribers that something changed. The renderer blurs this coarse grid into smooth
+coastlines and soft transitions (see [8.3](#83-terrain-pipeline)).
+
+On disk the grid is **run-length encoded**: a sequence of (value byte, varint run length) pairs, base64-encoded, so a
+mostly-empty 3200 × 2000 map is a few kilobytes. Terrain ids that no cell uses are dropped when saving
+(`compactTerrainIds`).
+
+### 6.2 Operations
+
+`ops.ts` holds the pure, immutable edits that tools and panels apply: `addSymbols`, `addLabel`, `addPath`,
+`updateSymbols/Labels/Paths`, `moveItems`, `removeItems`, `duplicateItems` (offset 24, 24), `reorderItems` (front/back),
+`floodTerrain` (cover everything, recolour all land, clear to sea), `renameDocument`, `updateSettings`, `setLook`
+(theme and frame). Items are addressed by `ItemRef { kind, id }`. Unchanged arrays are shared between versions, so a
+snapshot costs almost nothing.
+
+### 6.3 Create, expand, serialize, parse
+
+- `createDocument` makes an empty sea map (size clamped and snapped to the cell size).
+- `expandDocument(doc, { left, top, right, bottom })` adds canvas: it snaps the amounts to the cell size, validates
+  them (`validateExpansion` returns a message or `null`), shifts every symbol, label and path point, copies the terrain
+  into the larger grid and leaves the new area as open sea.
+- `serializeDocument` / `documentToJson` write the saved form (terrain as `{ cell, cols, rows, ids, rle }`).
+- `parseDocument` / `documentFromJson` read **untrusted** JSON (a project file or a server response): they check the
+  schema number, clamp every number to a sane range, drop malformed items, repair the terrain palette and refuse
+  oversize maps. Unknown symbol ids are **kept** (they are simply not drawn), so a file survives art being removed
+  from the catalog.
+
+### 6.4 Limits, presets and versions
+
+`LIMITS`: minimum side 400 px, maximum side 10 000 px, maximum area 40 megapixels, maximum export 64 megapixels,
+history 100 steps and 160 MB of distinct terrain arrays. `MAP_PRESETS`: Region 2400 × 1600, World 3200 × 2000,
+Continent 4800 × 3200, Square 2800 × 2800.
+
+`SCHEMA_VERSION` is `1`. `parseDocument` rejects files with a higher number. When the format changes, bump the
+version and add the migration in `parseDocument` (the e2e and unit tests load the sample world, which will tell you
+if a migration breaks it).
+
+## 7. State, history and saving
+
+### 7.1 The store
+
+`store/editorStore.ts` is one Zustand store: `doc`, `docRev` (grows on every change, including in-place terrain
+edits), `savedRev`, `history`, `selection`, `tool`, `options` (per-tool settings), `camera`, `viewport`, `cursor` and
+`labelEdit`. Actions: `open`, `commit`, `begin`/`update`/`end`, `touch`, `undo`, `redo`, `setTool`, `setOption`,
+`select`, `setLabelEdit`, `setCursor`, `markSaved`, `setCamera`, `setViewport`, `fit`, `zoomBy`. Selectors: `isDirty`,
+`canUndo`, `canRedo`.
+
+- `commit(next)` is one undoable change (an identical document is ignored).
+- A **gesture** (dragging, painting) calls `begin()`, then many `update(next)` calls, then `end()`. The history records
+  one step for the whole gesture; `end(false)` throws the gesture's edits away (Escape).
+- `burst.ts` does the same for sliders and number fields: rapid edits in the inspector become one undo step after a
+  short quiet time.
+- Tools are created once and keep their gesture state in closures; they read and write the store directly.
+
+### 7.2 History
+
+`store/history.ts` keeps whole-document snapshots. Because documents share unchanged arrays, a snapshot is cheap except
+for the terrain grid, so history is trimmed by length (100) **and** by the bytes of distinct terrain arrays (160 MB).
+Undoing or redoing a canvas expansion re-fits the camera because the map origin moves. The history is not saved.
+
+### 7.3 Autosave and the library
+
+`editor/useAutosave.ts` watches `docRev`:
+
+1. After `DEBOUNCE_MS` (1.2 s) of quiet, or at most `MAX_WAIT_MS` (8 s) into a long burst, it `PUT`s the document to
+   the server. Overlapping saves are serialized.
+2. A library thumbnail (JPEG, 360 px wide) is sent along when it is due: at most every 45 s while you keep working,
+   and always when you go back to the library, choose *Save now* in the "⋯" menu, or leave the editor.
+3. A failed save keeps the map safe in memory, shows "Not saved" and retries every 5 s. The next successful save clears it.
+4. The tab asks for confirmation (`beforeunload`) while there are unsaved changes, and flushes when it becomes hidden.
+
+The save status shown in the top bar (`data-status` = `saved`, `saving`, `dirty`, `error`) comes from this hook.
+`api/maps.ts` is the only code that calls `fetch`; it turns failures into an `ApiError` with a readable message.
+
+## 8. Rendering
+
+### 8.1 The render loop
+
+`editor/useRenderLoop.ts` owns two canvases: the **map** canvas and a transparent **overlay** canvas that tools use for
+brush circles, previews and selection handles. A `requestAnimationFrame` loop paints only when something changed:
+the document, the camera, the size, a finished terrain chunk, or the overlay state. Each frame it asks
+`MapRenderer.draw` for the picture, then spends up to 9 ms (`PUMP_BUDGET_MS`) painting terrain chunks that are still
+missing, so the window stays responsive on big maps.
+
+### 8.2 Scene order
+
+`engine/scene.ts` composes everything above the terrain. **The editor view and the exporter use the same functions**, so
+an exported image matches the screen. Order, bottom to top:
+
+1. Terrain (sea, land, beaches, coast ink): see 8.3
+2. Ground symbols (decals)
+3. Paths (rivers, roads, trails, borders, sea routes)
+4. Object symbols, sorted by anchor y
+5. Landmark symbols (settlements, towers), sorted by anchor y
+6. Air symbols
+7. Paper texture, multiplied over the whole map
+8. Labels (after the paper, so text stays crisp)
+9. Frame (border)
+10. Helper grid (editor option; off in exports unless requested)
+
+Only things inside the visible rectangle are drawn.
+
+### 8.3 Terrain pipeline
+
+`engine/terrain/`
+
+- `fields.ts` makes blurred copies of the grid: `coast` (a smooth coastline), `mid` (distance to the coast on land:
+  inner shade and beaches), `big` (distance to the coast in the sea: shallows and ripples) and a `weight` per terrain
+  (soft transitions between terrains). Updates are incremental: only the area around a changed cell is re-blurred
+  (`FIELD_REACH`).
+- `chunkPainter.ts` turns the fields into pixels, per pixel, for one 256 × 256 chunk: sea depth gradient, ripples,
+  coast shadow, tiling terrain texture, beach rim, inner shade and the ink line. The coast is displaced with noise
+  (amplitude grows with the *roughness* setting), which is what makes a coarse 4 px grid look hand-drawn. Work is cut into
+  bands of 8 rows (`paintRows`) so it can be time-sliced.
+- `tiles.ts` renders each terrain's seamless texture once per theme and resolution.
+- `TerrainRenderer.ts` keeps the chunk cache. It holds a private copy of the grid and compares it with the live one
+  (`diffRect`, guarded by the cheap `layer.rev` check), so it learns what a stroke changed without being told, re-blurs
+  only that area and marks only the chunks around it as stale. Chunks are painted lazily (only the visible ones) at
+  one of four detail levels (×0.5, 1, 2, 4), and old pictures are shown until fresh ones are ready. A
+  least-recently-used cache keeps at most 40 megapixels. `renderTo()` paints everything for the exporter, with progress
+  and cancel.
+
+### 8.4 Sprites
+
+`engine/sprites/spriteCache.ts` rasterizes a symbol once per (symbol, variant, theme, level) and reuses the bitmap
+while panning and zooming. Levels are ×0.25 to ×4; the smallest level that is at least as sharp as the screen is
+chosen. The cache is a least-recently-used map limited to 48 megapixels. `engine/symbols.ts` adds draw order, bounds
+(including rotation and mirroring around the anchor), culling bounds and a coarse alpha mask so clicking selects the
+drawn pixels, not the whole box.
+
+### 8.5 Paths, labels, paper
+
+- **Paths** (`engine/paths.ts`): the stored control points are smoothed with a Catmull-Rom spline, a width is computed
+  for every point (rivers taper from source to mouth), and the style's `draw()` paints the result. Geometry is cached
+  per path object (`WeakMap`). `simplifyStroke` (Ramer-Douglas-Peucker) reduces freehand input.
+- **Labels** (`engine/labels.ts`): the text is measured once per label object (documents are immutable) and each glyph
+  is placed individually, straight or along a circular arc for the *curve* slider; the halo is drawn first. The cache is
+  keyed by theme and a "fonts loaded" epoch, so labels measured with a fallback font are redone when the real font arrives.
+- **Paper** (`engine/paper.ts`): a 512 px fibre texture, generated once per theme, is multiplied over the whole map, and
+  a vignette darkens the edges.
+
+### 8.6 Picking
+
+`engine/picking.ts` answers "what is here?" for the three kinds of things. `pickStack` lists everything under a point from
+the top-most to the bottom-most (labels, air, landmarks, objects, paths, ground decals, the reverse of the drawing
+order) and `pickAt` returns the first. `pickInCircle` serves the eraser, `pickInRect` the marquee, and `boundsOfItem(s)`
+the selection frame. Symbols are hit through the alpha mask (so clicking next to a tree misses), paths by their
+distance to the smoothed line plus half the width, and labels by their rotated box. A `slop` of a few screen pixels
+makes thin things easy to hit.
+
+## 9. Tools and input
+
+### 9.1 The Tool interface
+
+```ts
+interface Tool {
+  cursor(): string;
+  down?(p: PointerInfo): void;
+  move?(p: PointerInfo, pressed: boolean): void;
+  up?(p: PointerInfo): void;
+  doubleClick?(p: PointerInfo): void;
+  key?(e: KeyboardEvent): boolean;      // true = handled
+  cancel?(): void;                      // Escape, tool switch, lost pointer
+  overlay?(ctx, info: OverlayInfo): void;  // previews, drawn in map space on the overlay canvas
+}
+```
+
+`PointerInfo` carries the map position, the CSS position, the modifier keys and `px` (map px per CSS px).
+`tools/index.ts` builds one instance of each tool. `editor/toolInfo.ts` is the single registry of tool names, icons,
+hotkeys, blurbs and status hints; the rail, panels and status bar all read it.
+
+### 9.2 What each tool does
+
+| Tool | File | Behaviour |
+|------|------|-----------|
+| Select | `selectTool.ts`, `selectionGeometry.ts` | Click or marquee, Shift adds, drag moves, Alt+drag copies, handles scale and rotate (Shift snaps to 15°), path nodes can be dragged, added and removed, arrows nudge, Ctrl+D / Ctrl+A / Delete / PgUp / PgDn |
+| Pan | (cursor only) | Panning itself is handled by the map view |
+| Land | `terrainTool.ts` | Clones the grid on pointer-down, paints capsule segments into it in place (`paintStroke`; edge noise makes overlapping strokes share one natural edge), `touch()` per segment, one undo step on release. Modes: paint, recolor (land only), sea |
+| Stamp | `symbolTool.ts`, `scatter.ts` | Click places one symbol (random variant, flip and scale if enabled); with a brush selected, dragging scatters. The scatter works on a fixed lattice where each cell owns one hashed candidate, so sweeping over a spot twice never doubles it |
+| Paths | `pathTool.ts` | Freehand drag, sampled at ≥ max(2, 3·px), simplified with `simplifyStroke(2.2·px)`, capped at 600 points, committed on release |
+| Text | `labelTool.ts`, `editor/LabelEditor.tsx` | A click opens an in-place text box; Enter commits, Esc cancels |
+| Eraser | `eraserTool.ts` | Removes symbols, paths and labels under a round brush (each kind can be switched off) |
+
+Overlays use `overlayDraw.ts` (brush circle, dashed rectangle, handle) with zoom-independent line widths.
+`overlayBus.ts` lets tools and panels ask the map view to repaint the overlay.
+
+### 9.3 Input
+
+`editor/useMapInput.ts` is the only code that listens to the map canvas. It uses Pointer Events with pointer capture,
+so mouse, pen and touch behave the same: left button → tool; middle or right button, Space+drag or the Pan tool →
+pan; two fingers → pinch-zoom and pan; wheel → zoom around the pointer (Ctrl+wheel is finer). It batches coalesced
+pointer events for smooth strokes and cancels a running gesture when a second finger lands or the tool changes. Elements marked
+`data-map-chrome` (the edge chips, the label box) opt out of map input.
+
+`editor/useHotkeys.ts` handles the global shortcuts (tools, brush size, zoom, undo/redo, save) and ignores keys while
+you are typing in a text field (`isKeyCaptured` in `keys.ts`). The tool-specific keys go through `Tool.key`. The list of
+shortcuts is in the README.
+
+## 10. User interface
+
+### 10.1 Pages and routing
+
+`utils/router.ts` is a tiny hash router (`#/`, `#/editor/:id`, `#/gallery?…`), so any static host or the Express
+fallback can serve the app. `App.tsx` switches the page.
+
+- **HomePage:** the map library (cards with thumbnails, rename, download, delete), *New world* (size presets or custom
+  size, theme), *Open a project file*, *Sample world*, a link to the art gallery, and a clear message when the server
+  cannot be reached.
+- **EditorPage:** loads the map and the fonts together (`api/maps.ts` → `parseDocument` → `store.open`) while showing
+  "Unrolling the map…"; a failure shows the reason with *Try again* and *My maps*. The studio lives inside it, and
+  `App.tsx` gives the page `key={id}` so switching maps resets all state. A failing autosave raises a banner with
+  *Retry* and *Download copy*, so the work can always be rescued.
+- **GalleryPage:** a browser for the art with tabs (symbols, terrain, frames, labels), category and search filters,
+  theme, zoom, background and a `debug=1` overlay. Its settings live in the URL, so a view can be bookmarked.
+
+### 10.2 The studio
+
+`editor/MapView.tsx` hosts the two canvases, the edge chips and the label box and wires the three hooks
+(`useRenderLoop`, `useMapInput`, `useHotkeys`). `TopBar` (name, undo/redo, zoom, save state, Add canvas, Style, Export,
+"⋯" menu), `ToolRail`, `StatusBar` and `EdgeChips` (the round **+** handles that add canvas) surround it.
+
+Panels (`editor/panels/`): `TerrainPanel` (modes, brush size, grouped palette, whole-map fills), `SymbolPanel`
+(search, category tabs, size, scatter radius, random options), `PathPanel`, `LabelPanel`, `EraserPanel`, `TipPanels`
+(Select and Pan help) and `Inspector` (details of the selection). Dialogs (`editor/dialogs/`): `ExpandDialog`,
+`ExportDialog`, `SettingsDialog` (theme, border, beaches, shallows, grid, roughness).
+
+`components/` holds the shared widgets. Palette thumbnails (`SymbolThumb`, `TerrainSwatch`, `BrushPreview`,
+`PathPreview`) draw the real art through the sprite cache; `LazyMount` draws a tile only when it scrolls into view so a
+239-symbol palette opens instantly.
+
+### 10.3 Styling
+
+Bootstrap provides layout, forms, buttons, modals and dropdowns. `styles/theme.css` re-skins Bootstrap's dark theme
+through CSS variables (warm gold and ember on dark brown) and defines the design tokens `--wm-*`; `editor.css` and
+`home.css` style the studio and the library. Bootstrap Icons supply every icon. To restyle the app, change the
+variables in `theme.css`.
+
+## 11. Image export
+
+`engine/exportMap.ts` renders the whole map to an offscreen canvas:
+
+1. `ensureFonts()`, then a throw-away `TerrainRenderer` paints the terrain at the chosen scale (progress 0–90 %,
+   cancellable through an `AbortSignal`).
+2. `drawObjects` and `drawFinish` from `scene.ts` draw symbols, paths, labels, frame and (optionally) the grid.
+3. The canvas becomes a PNG, JPEG (default quality 0.92) or WebP blob and is downloaded with a file name derived from
+   the map name.
+
+Scales run from ×0.5 to ×4 in steps of 0.5. `maxExportScale` keeps the result within 64 megapixels; the dialog shows
+the resulting size and disables larger scales, and `renderMapToCanvas` throws a readable error if called with one. The
+same function renders the 360 px library thumbnails at ×0.5.
+
+## 12. Backend
+
+`server/` is a small Express 5 app (ES modules, TypeScript). `createApp(options)` in `app.ts` builds the app without
+opening a port, which is what the tests use; `index.ts` loads the config and listens.
+
+### 12.1 API
+
+| Method and path | Purpose |
+|-----------------|---------|
+| `GET /api/health` | `{ ok: true, name: 'wondermap' }` |
+| `GET /api/maps` | List of `{ id, name, width, height, createdAt, updatedAt, thumbnail }`, newest first |
+| `GET /api/maps/:id` | The stored map JSON; 404 when missing |
+| `PUT /api/maps/:id` | Body `{ map, thumbnail? }`. Creates or replaces. A missing or `null` thumbnail keeps the old one |
+| `DELETE /api/maps/:id` | 204, or 404 when missing |
+
+Errors are JSON: `{ "error": "…" }` with 400 (invalid id or body), 404, 413 (body too large) or 500.
+
+### 12.2 Validation and storage
+
+- **Ids** match `/^[a-zA-Z0-9_-]{8,64}$/` because they become file names; nothing else can reach the file system path.
+- `PUT` checks only what the server needs: the body is an object, `map.id` equals the URL, `map.schema` is a number,
+  `map.name` is 1–120 characters, width and height are numbers between 1 and 100 000, `map.terrain` is an object, and the
+  thumbnail (if present) is a PNG, JPEG or WebP data URL of at most 600 000 characters. The **map itself is opaque JSON**:
+  the client owns the schema and its migrations.
+- Maps are stored as `<DATA_DIR>/maps/<id>.json` with a small `<id>.meta.json` beside it for the library list. Files are
+  written to a temporary name and renamed, so a crash cannot leave half a map, and a per-id lock serializes
+  overlapping saves of the same map.
+- `express.json` accepts bodies up to `BODY_LIMIT` (default 40 MB).
+
+### 12.3 Serving the client
+
+With a built client (`client/dist`) the server serves it, with a fallback to `index.html` for any other path. Files in
+`assets/` have content hashes in their names and are cached for a year (`immutable`); `index.html` and the other static
+files are always revalidated, so a new build is picked up on the next load. Responses carry `X-Content-Type-Options:
+nosniff` and `Referrer-Policy: same-origin`, and `X-Powered-By` is off.
+
+### 12.4 Configuration
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `PORT` | `4000` | HTTP port |
+| `DATA_DIR` | `server/data` | Where maps are stored |
+| `CLIENT_DIST` | `client/dist` | Built client to serve (nothing is served if `index.html` is missing) |
+| `BODY_LIMIT` | `40mb` | Largest request body |
+| `WONDERMAP_API` | `http://localhost:4000` | Read by the **Vite dev server** (and `vite preview`): where `/api` is proxied to |
+
+There is **no authentication**: anyone who can reach the port can read and change every map. Run it on `localhost` or
+behind something that adds access control.
+
+## 13. Testing
+
+| Layer | Tool | Where | What it covers |
+|-------|------|-------|----------------|
+| Art | Vitest | `illustrations/tests/` | The catalog's rules (ids, categories, design boxes, brushes, terrains, themes, frames, fonts, path widths, overdraw) and a smoke test that draws **every variant of every symbol, every terrain tile, path style and frame** on a recording fake canvas. It checks that nothing throws, nothing paints NaN or an invalid colour, something is painted, the same seed always gives the same drawing, and the variants really differ |
+| Logic | Vitest | `client/src/**/*.test.ts` | The document model and operations, terrain painting and the RLE format, history limits, camera maths, picking, paths, labels, symbols, scatter, selection geometry, terrain fields, and the shipped sample world |
+| API | Vitest + supertest | `server/tests/` | Every endpoint, body validation, ids that could escape the data folder, overlapping saves, thumbnails and dates, 404s, and the static-file and cache headers |
+| End to end | Playwright | `e2e/` | The real production build in a real browser: creating a world, painting, undo and redo, box selection, hotkeys, zoom, saving and reloading, adding canvas, renaming and restyling, exporting a PNG, downloading and importing a project file, the sample world, and the server going away and coming back |
+
+```bash
+npm test                                    # illustrations, client and server unit/API tests
+npm run lint                                # oxlint
+npm run typecheck                           # tsc for every workspace and the e2e project
+npm run test:e2e                            # builds, starts the server on a throw-away data folder, runs Playwright
+cd client && npx vitest run src/model       # a subset
+npx playwright test --config e2e/playwright.config.ts --grep sample   # e2e without rebuilding
+```
+
+**Test doubles.** Unit tests run in Node. `illustrations/tests/fakeCanvas.ts` records canvas calls;
+`client/src/testing/fakeDom.ts` stubs `document` so text can be measured (every character is `0.5 × font size` wide).
+
+**End-to-end setup** (`e2e/playwright.config.ts`):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `E2E_CHANNEL` | `msedge` | Installed browser to drive (`chrome`, `msedge`, or `chromium` for the one from `npx playwright install`) |
+| `E2E_PORT` | `4100` | Port of the throw-away server |
+| `WM_URL` | – | Use an app that is already running instead of starting one |
+
+The tests run one at a time (they share a server) with a 1600 × 1000 viewport. Traces of failed tests are kept in
+`test-results/` at the repository root (git-ignored). Helpers in `e2e/support/`:
+
+- the `errors` fixture fails any test that logs a console error or raises a page error, unless it declares the
+  expected message with `errors.allow(/regex/)`;
+- the `library` fixture is a small client of the API (`get`, `exists`, `saved`, which polls until the autosave has
+  delivered what the test expects). Every map the editor helpers create or open is registered with it (`track`) and
+  deleted afterwards, even when the test fails;
+- the `editor` fixture drives the page (`createWorld`, `tool`, `paintTerrain`, `stamp`, `scatter`, `draw`, `label`,
+  `untilSaved`…) with positions given as fractions of the map view, and waits until the map is saved before it tears
+  down, so a late autosave cannot bring a deleted map back.
+
+A page reload while the map has unsaved changes opens the `beforeunload` prompt, so tests wait for "Saved" first.
+The server data folder lives in the system temp directory (`wondermap-e2e-data`).
+
+## 14. Dev workflow and tooling
+
+### 14.1 Scripts
+
+| Script | Does |
+|--------|------|
+| `npm run dev` | API on :4000 (tsx watch) and Vite on :5173, which proxies `/api` |
+| `npm run build` | Type-checks and builds the client (`client/dist`), then compiles the server (`server/dist`) |
+| `npm start` | Serves the API and the built client from `server/dist` |
+| `npm run typecheck`, `lint`, `test`, `test:e2e` | See [13](#13-testing) |
+| `npm run shot -- <url> <out.png> [--size 1600x1000] [--wait 800] [--selector "#id"] [--dpr 1] [--ready "js"] [--click "css"] [--logs]` | Headless screenshot of any page through the installed Edge or Chrome; always prints console errors |
+| `npm run check:art -- [--filter castle.] [--all] [--url http://localhost:5173]` | Draws every symbol variant through the running dev server and reports art that spills beyond its overdraw margin |
+
+### 14.2 Looking at art
+
+Open `#/gallery`. Parameters: `tab` (symbols, terrain, frames, labels), `category`, `q`, `theme`, `zoom`, `bg`
+(none, grass, earth, sand, snow, swamp, stone, sea, paper), `variants`, `debug=1` (draws the design box and anchor).
+Check sea art on `bg=sea` and land art on `bg=grass`.
+
+### 14.3 Hot reload
+
+Vite picks up new and edited art files (`watchIllustrations` in `vite.config.ts` adds the art folder to the watcher,
+because it lives outside the client root). Editing art re-executes `editorStore.ts` through the catalog import, and a
+second store instance would replace the open map with an empty one, so the store contains a guard that **reloads the
+page** instead. Edits to UI files hot-reload normally.
+
+### 14.4 Lint rules
+
+`.oxlintrc.json` turns the `correctness` category on as errors for the `react`, `typescript` and `oxc` plugins, and adds
+`react/rules-of-hooks` (error), `react/exhaustive-deps` (warning) and `typescript/no-explicit-any` (warning).
+`no-unused-vars` is off because `tsc` already enforces `noUnusedLocals` and `noUnusedParameters`. Ignored: `dist`,
+`node_modules`, `server/data`, `map_examples` and `.screenshots`. `npm run lint` must print no errors and no warnings.
+
+### 14.5 Project files
+
+A project file is exactly what the server stores (`*.wondermap.json`), so *Download project file* followed by
+*Open a project file* is a lossless backup and a way to move a map between installations.
+
+## 15. Performance and limits
+
+| Topic | Design |
+|-------|--------|
+| Terrain | 4 px cells; 256 px chunks painted lazily, time-sliced (8-row bands, 9 ms per frame), at four detail levels, within a 40 MP LRU |
+| Symbols | One bitmap per (symbol, variant, theme, level), 48 MP LRU; only visible symbols are drawn; labels and paths cached per object |
+| Render loop | Paints a frame only when the document, camera, size, fonts or terrain pictures changed |
+| Undo | 100 steps, 160 MB of distinct terrain arrays |
+| Map size | 400–10 000 px per side, at most 40 MP (a 4800 × 3200 continent is 15 MP) |
+| Export | At most 64 MP per image, with progress and cancel |
+| Saving | The whole map is sent after 1.2 s of quiet (the 487-thing sample world is 85 KB, a typical map is well under 1 MB); the server accepts up to 40 MB |
+| Bundle | About 1.06 MB of JavaScript (354 kB gzipped), mostly the generated art; code-splitting is on the [plan](PLAN.md) |
+
+## 16. Extension recipes
+
+| I want to… | Do this |
+|------------|---------|
+| Add a symbol (a creature, a building…) | Copy a similar file in `illustrations/symbols/<category>/`, change `id`, `name` and `draw`, check it in `#/gallery`, run `npm run check:art -- --filter <id>`. It appears in the palette and the tests cover it automatically |
+| Add a scatter brush | New file in `illustrations/brushes/` with `defineBrush` listing symbol ids |
+| Add a palette category | Add an entry to `illustrations/categories.ts` (and a folder under `symbols/`); the panel builds its tabs from the list |
+| Add a terrain | New file in `illustrations/terrain/` with a seamless `texture()`; it appears in the Land palette (group decides the section and whether it gets a beach) |
+| Add a path style, label style, theme or frame | New file in the matching folder (labels: append to `labels/styles.ts`) |
+| Add a font | `npm i -w illustrations @fontsource/<name>`, import its CSS in `fonts/index.ts`, register it with `defineFont` |
+| Add a tool | Write `createXTool()` in `client/src/tools/` and register it in `createTools()` (`tools/index.ts`); add its id to `ToolId` (`store/editorStore.ts`); add an entry to `TOOL_LIST` (`editor/toolInfo.ts`: name, icon, hotkey, texts; the rail and the hotkeys read it); add a panel in `editor/panels/` and a `case` in `ToolPanel.tsx` |
+| Add a field to the document | Add it to `model/types.ts`, give it a default in `createDocument`, read it defensively in `parseDocument`, bump `SCHEMA_VERSION` if old files need a migration, and cover it in `document.test.ts` |
+| Add an API endpoint | A router in `server/src/routes/`, mounted in `app.ts`, with a test in `server/tests/` |
+| Make a new map type (towns, dungeons) | See the plan in [PLAN.md](PLAN.md): `kind` in the document, a link from a symbol, new art categories, new terrains |
+
+## 17. Known limitations
+
+- **No authentication or multi-user support.** Maps are plain files on the server's disk.
+- **The editor needs the server to save.** A failed save is retried and the map stays in memory, but a closed tab
+  loses unsaved edits (the browser warns first).
+- **Terrain resolution is 4 px.** Fine coastline detail comes from smoothing and noise, not from the painted shape.
+- **Undo history is kept in memory only.**
+- **The whole map is sent on every save** rather than a difference.
+- **Browsers:** developed and tested on Chromium (Edge). Only standard web APIs are used, but Firefox and Safari have
+  not been tested.
+- **World maps only.** Town, city, castle and dungeon maps are planned (see [PLAN.md](PLAN.md)).
+- Small polish items and art that could be better are listed in [PLAN.md](PLAN.md#41-polish-and-known-issues-small).

@@ -1,0 +1,32 @@
+{
+  "name": "@wondermap/illustrations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "All generated artwork for WonderMap: terrain textures, symbols, brushes, path styles, label presets, themes, frames.",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./kit": "./kit/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource/almendra": "^5.3.0",
+    "@fontsource/cinzel": "^5.3.0",
+    "@fontsource/im-fell-english": "^5.3.0",
+    "@fontsource/medievalsharp": "^5.3.0",
+    "@fontsource/metamorphous": "^5.3.0",
+    "@fontsource/pirata-one": "^5.3.0",
+    "@fontsource/uncial-antiqua": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

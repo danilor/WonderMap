@@ -1,0 +1,115 @@
+:root {
+  --wm-bg: #15110d;
+  --wm-bg-2: #1c1712;
+  --wm-panel: #231c15;
+  --wm-panel-2: #2c231a;
+  --wm-border: #43362a;
+  --wm-border-soft: #34291f;
+  --wm-text: #eadfc6;
+  --wm-muted: #a99a80;
+  --wm-gold: #d9a441;
+  --wm-gold-2: #f0c36a;
+  --wm-ember: #c4552d;
+  --wm-teal: #4aa3a8;
+  --wm-font-display: 'Cinzel', 'Palatino Linotype', Georgia, serif;
+  --wm-font-ui: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Bootstrap dark theme tuned to a warm, game-like palette (no Sass build needed). */
+[data-bs-theme='dark'] {
+  --bs-body-bg: var(--wm-bg);
+  --bs-body-color: var(--wm-text);
+  --bs-body-font-family: var(--wm-font-ui);
+  --bs-body-font-size: 0.9rem;
+  --bs-secondary-color: var(--wm-muted);
+  --bs-tertiary-bg: var(--wm-panel-2);
+  --bs-secondary-bg: var(--wm-panel);
+  --bs-border-color: var(--wm-border);
+  --bs-emphasis-color: #fff6df;
+  --bs-primary: var(--wm-gold);
+  --bs-primary-rgb: 217, 164, 65;
+  --bs-link-color: var(--wm-gold-2);
+  --bs-link-hover-color: #ffe0a0;
+  --bs-form-control-bg: #1a1510;
+  --bs-focus-ring-color: rgba(217, 164, 65, 0.3);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--wm-bg);
+  overflow: hidden;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.wm-display {
+  font-family: var(--wm-font-display);
+  letter-spacing: 0.04em;
+}
+
+.btn-primary {
+  --bs-btn-color: #2a1a05;
+  --bs-btn-bg: var(--wm-gold);
+  --bs-btn-border-color: #a77b27;
+  --bs-btn-hover-color: #1d1203;
+  --bs-btn-hover-bg: var(--wm-gold-2);
+  --bs-btn-hover-border-color: #c79335;
+  --bs-btn-active-color: #1d1203;
+  --bs-btn-active-bg: #f6d085;
+  --bs-btn-active-border-color: #c79335;
+  --bs-btn-disabled-color: #2a1a05;
+  --bs-btn-disabled-bg: #8c7340;
+  --bs-btn-disabled-border-color: #7a6538;
+  font-weight: 600;
+}
+
+.btn-outline-light {
+  --bs-btn-color: var(--wm-text);
+  --bs-btn-border-color: var(--wm-border);
+  --bs-btn-hover-color: #1d1203;
+  --bs-btn-hover-bg: var(--wm-gold-2);
+  --bs-btn-hover-border-color: var(--wm-gold-2);
+  --bs-btn-active-color: #1d1203;
+  --bs-btn-active-bg: var(--wm-gold);
+  --bs-btn-active-border-color: var(--wm-gold);
+}
+
+.form-control,
+.form-select {
+  background-color: #1a1510;
+  border-color: var(--wm-border);
+}
+
+.form-control:focus,
+.form-select:focus {
+  background-color: #1f1913;
+  border-color: var(--wm-gold);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b3d2d;
+  border-radius: 6px;
+  border: 2px solid var(--wm-bg);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wm-scroll {
+  overflow: auto;
+}

@@ -1,0 +1,33 @@
+{
+  "name": "wondermap",
+  "version": "0.1.0",
+  "description": "WonderMap - a web-based fantasy map painter for D&D worlds (Vite + React + Bootstrap + Node.js)",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "illustrations",
+    "client",
+    "server"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c yellow,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p e2e/tsconfig.json",
+    "lint": "oxlint",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run build && playwright test --config e2e/playwright.config.ts",
+    "shot": "node tools/screenshot.mjs",
+    "check:art": "node tools/check-art.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "concurrently": "^10.0.7",
+    "oxlint": "^1.90.0",
+    "playwright-core": "^1.65.1",
+    "typescript": "~7.0.2"
+  }
+}
