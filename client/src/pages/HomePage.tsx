@@ -8,6 +8,7 @@ import { downloadText, projectFileName } from '../utils/files';
 import { navigate } from '../utils/router';
 import { MapCard } from './home/MapCard';
 import { NewWorldDialog } from './home/NewWorldDialog';
+import { ExampleMaps } from './home/ExampleMaps';
 
 const message = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -16,10 +17,12 @@ export function HomePage() {
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
   const [offline, setOffline] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [doomed, setDoomed] = useState<MapSummary | null>(null);
   const [confirming, setConfirming] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const noticeBox = useRef<HTMLDivElement>(null);
 
   const showMaps = useCallback((list: MapSummary[]) => {
     setMaps([...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
@@ -42,6 +45,11 @@ export function HomePage() {
     };
   }, [showMaps, showFailure]);
 
+  // The example maps are further down the page than the message that says one could not be opened.
+  useEffect(() => {
+    if (notice) noticeBox.current?.scrollIntoView({ block: 'nearest' });
+  }, [notice]);
+
   async function importText(text: string, label: string) {
     setNotice(null);
     try {
@@ -55,13 +63,16 @@ export function HomePage() {
     }
   }
 
-  async function openSample() {
+  async function openExample(slug: string, label: string) {
+    setOpening(slug);
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}samples/aldoria.wondermap.json`);
+      const res = await fetch(`${import.meta.env.BASE_URL}samples/${slug}.wondermap.json`);
       if (!res.ok) throw new Error(`The server answered ${res.status}.`);
-      await importText(await res.text(), 'The sample world');
+      await importText(await res.text(), label);
     } catch (e) {
-      setNotice(`The sample world could not be loaded: ${message(e, 'unknown error')}`);
+      setNotice(`${label} could not be loaded: ${message(e, 'unknown error')}`);
+    } finally {
+      setOpening(null);
     }
   }
 
@@ -103,7 +114,13 @@ export function HomePage() {
               <i className="bi bi-upload me-2" />
               Open a project file
             </button>
-            <button type="button" className="btn btn-outline-light btn-lg" onClick={() => void openSample()} data-testid="open-sample">
+            <button
+              type="button"
+              className="btn btn-outline-light btn-lg"
+              onClick={() => void openExample('aldoria', 'The sample world')}
+              disabled={opening !== null}
+              data-testid="open-sample"
+            >
               <i className="bi bi-stars me-2" />
               Sample world
             </button>
@@ -138,7 +155,7 @@ export function HomePage() {
           </div>
         )}
         {notice && (
-          <div className="alert alert-danger d-flex align-items-center gap-3" role="alert">
+          <div ref={noticeBox} className="alert alert-danger d-flex align-items-center gap-3" role="alert">
             <span className="flex-grow-1">{notice}</span>
             <button type="button" className="btn-close" aria-label="Dismiss" onClick={() => setNotice(null)} />
           </div>
@@ -168,9 +185,11 @@ export function HomePage() {
                 />
               ))}
             </div>
-            {maps.length === 0 && !offline && <p className="empty-note">Nothing here yet. Create your first world and start painting, or open the sample world to look around.</p>}
+            {maps.length === 0 && !offline && <p className="empty-note">Nothing here yet. Create your first world and start painting, or open one of the example maps below to look around.</p>}
           </>
         )}
+
+        <ExampleMaps opening={opening} onOpen={(example) => void openExample(example.slug, example.name)} />
       </main>
 
       <NewWorldDialog show={creating} onHide={() => setCreating(false)} />

@@ -150,3 +150,47 @@
   color: var(--wm-gold-2);
   background: rgba(217, 164, 65, 0.06);
 }
+
+.examples {
+  margin-top: 2.6rem;
+}
+
+.home-lede {
+  margin: -0.5rem 0 1rem;
+  font-size: 0.86rem;
+  color: var(--wm-muted);
+}
+
+/* An example is one big button: the whole card opens it. */
+.example-card {
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.example-card:focus-visible {
+  outline: 2px solid var(--wm-gold);
+  outline-offset: 2px;
+}
+
+.example-card:disabled {
+  cursor: progress;
+  transform: none;
+}
+
+.example-card .map-card-body {
+  display: block;
+  padding-bottom: 0.85rem;
+}
+
+.example-card .map-card-name {
+  white-space: normal;
+}
+
+.example-card .map-card-meta {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}

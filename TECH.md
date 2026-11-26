@@ -46,10 +46,12 @@ WonderMap/
 │
 ├─ client/                               the web app (Vite + React)
 │  ├─ index.html  vite.config.ts
-│  ├─ public/samples/                    aldoria.wondermap.json, the sample world
+│  ├─ public/samples/                    the example maps: <slug>.wondermap.json and a <slug>.jpg thumbnail each
+│  │                                     (aldoria is hand-made; avatar, westeros and middle-earth are generated)
 │  └─ src/
 │     ├─ main.tsx  App.tsx               entry point and page switch
-│     ├─ pages/                          HomePage (library) · EditorPage · GalleryPage (art browser) · home/*
+│     ├─ pages/                          HomePage (library) · EditorPage · GalleryPage (art browser) · home/* (the
+│     │                                  Example maps gallery and the list of examples)
 │     ├─ editor/                         the painting studio: MapView, TopBar, ToolRail, StatusBar, EdgeChips,
 │     │                                  LabelEditor, hooks (render loop, input, hotkeys, autosave), panels/, dialogs/
 │     ├─ components/                     small reusable widgets (Slider, Segmented, palette tiles, previews)
@@ -61,7 +63,8 @@ WonderMap/
 │     ├─ api/maps.ts                     fetch wrapper for the server
 │     ├─ utils/                          router, files (download/upload), backdrop (the ground behind a symbol)
 │     ├─ devtools/                       the asset catalog: what to draw, how to draw it, how to write ASSETS.md
-│     │                                  (used by tools/assets.mjs and a test; nothing in the app imports it)
+│     │                                  (used by tools/assets.mjs and a test; nothing in the app imports it), and
+│     │                                  samples/: the generator of the example maps (section 14.7)
 │     ├─ styles/                         theme.css · editor.css · home.css
 │     └─ testing/fakeDom.ts              test helper
 │
@@ -71,8 +74,9 @@ WonderMap/
 │  └─ data/                              saved maps (git-ignored, created on first run)
 │
 ├─ e2e/                                  Playwright tests: tests/, support/ (fixtures, page helpers), config
-├─ tools/                                assets.mjs (makes ASSETS.md), screenshot.mjs, check-art.mjs; lib/ has the shared
-│                                        browser launcher and argument parser
+├─ tools/                                assets.mjs (makes ASSETS.md), samples.mjs (makes the example maps),
+│                                        screenshot.mjs, check-art.mjs; lib/ has the shared browser launcher and
+│                                        argument parser
 ├─ docs/assets/                          the pictures shown in ASSETS.md (generated, committed)
 ├─ docs/images/                          screenshots used by the README
 ├─ map_examples/                         the style references this project was built against
@@ -81,7 +85,7 @@ WonderMap/
 
 Dependency direction: `client` imports `illustrations`; `illustrations` imports nothing from the app; `server`
 imports neither (it stores map documents as opaque JSON). `e2e` and `tools` only drive the app through a browser
-(`tools/assets.mjs` starts the client's Vite server itself).
+(`tools/assets.mjs` and `tools/samples.mjs` start the client's Vite server themselves).
 
 ### Data flow
 
@@ -434,8 +438,11 @@ shortcuts is in the README.
 fallback can serve the app. `App.tsx` switches the page.
 
 - **HomePage:** the map library (cards with thumbnails, rename, download, delete), *New world* (size presets or custom
-  size, theme), *Open a project file*, *Sample world*, a link to the art gallery, and a clear message when the server
-  cannot be reached.
+  size, theme), *Open a project file*, *Sample world* (opens Aldoria), the **Example maps** gallery, a link to the art
+  gallery, and a clear message when the server cannot be reached. The gallery (`home/ExampleMaps.tsx`, with its list in
+  `home/examples.ts`) is part of the page, so it shows even then. A card downloads `samples/<slug>.wondermap.json` and
+  imports it exactly like a project file, which gives the user **a copy with a fresh id**; the original is never
+  touched and opening an example twice makes two copies. The card picture is `samples/<slug>.jpg`.
 - **EditorPage:** loads the map and the fonts together (`api/maps.ts` → `parseDocument` → `store.open`) while showing
   "Unrolling the map…"; a failure shows the reason with *Try again* and *My maps*. The studio lives inside it, and
   `App.tsx` gives the page `key={id}` so switching maps resets all state. A failing autosave raises a banner with
@@ -533,9 +540,9 @@ behind something that adds access control.
 | Layer | Tool | Where | What it covers |
 |-------|------|-------|----------------|
 | Art | Vitest | `illustrations/tests/` | The catalog's rules (ids, categories, design boxes, brushes, terrains, themes, frames, fonts, path widths, overdraw) and a smoke test that draws **every variant of every symbol, every terrain tile, path style and frame** on a recording fake canvas. It checks that nothing throws, nothing paints NaN or an invalid colour, something is painted, the same seed always gives the same drawing, and the variants really differ |
-| Logic | Vitest | `client/src/**/*.test.ts` | The document model and operations, terrain painting and the RLE format, history limits, camera maths, picking, paths, labels, symbols, scatter, selection geometry, terrain fields, the shipped sample world, and the **asset catalog guard** that fails when `ASSETS.md` or its pictures are out of date ([14.6](#146-the-asset-catalog-assetsmd)) |
+| Logic | Vitest | `client/src/**/*.test.ts` | The document model and operations, terrain painting and the RLE format, history limits, camera maths, picking, paths, labels, symbols, scatter, selection geometry, terrain fields, the shipped sample world, the **example maps** (the registry, the builder that makes them, and that each committed file is exactly what its code makes, [14.7](#147-the-example-maps-npm-run-samples)), and the **asset catalog guard** that fails when `ASSETS.md` or its pictures are out of date ([14.6](#146-the-asset-catalog-assetsmd)) |
 | API | Vitest + supertest | `server/tests/` | Every endpoint, body validation, ids that could escape the data folder, overlapping saves, thumbnails and dates, 404s, and the static-file and cache headers |
-| End to end | Playwright | `e2e/` | The real production build in a real browser: creating a world, painting, undo and redo, box selection, hotkeys, zoom, saving and reloading, adding canvas, renaming and restyling, exporting a PNG, downloading and importing a project file, the sample world, and the server going away and coming back |
+| End to end | Playwright | `e2e/` | The real production build in a real browser: creating a world, painting, undo and redo, box selection, hotkeys, zoom, saving and reloading, adding canvas, renaming and restyling, exporting a PNG, downloading and importing a project file, the sample world, every example map on the title screen (its picture, and that opening it makes an editable copy), and the server going away and coming back |
 
 ```bash
 npm test                                    # illustrations, client and server unit/API tests
@@ -585,6 +592,7 @@ The server data folder lives in the system temp directory (`wondermap-e2e-data`)
 | `npm run shot -- <url> <out.png> [--size 1600x1000] [--wait 800] [--selector "#id"] [--dpr 1] [--ready "js"] [--click "css"] [--logs]` | Headless screenshot of any page through the installed Edge or Chrome; always prints console errors |
 | `npm run check:art -- [--filter castle.] [--all] [--url http://localhost:5173]` | Draws every symbol variant through the running dev server and reports art that spills beyond its overdraw margin |
 | `npm run assets -- [--only symbol,brush] [--filter mountain] [--url http://localhost:5173]` | Draws every asset into `docs/assets/` and writes `ASSETS.md` (about 20 s); see [14.6](#146-the-asset-catalog-assetsmd) |
+| `npm run samples -- [build\|thumbs\|preview <slug>] [slug…] [--scale 1] [--crop x,y,w,h] [--names]` | Makes the generated example maps (`client/public/samples/`) and their pictures, or draws one for you to look at; see [14.7](#147-the-example-maps-npm-run-samples) |
 
 ### 14.2 Looking at art
 
@@ -667,6 +675,71 @@ renderer and the tests.
 commit `ASSETS.md` and `docs/assets/` with the change. When the new art is the only change, `npm run assets -- --only
 symbol,brush` is a quick way to look at the pictures first.
 
+### 14.7 The example maps (`npm run samples`)
+
+The title screen offers four example maps ([10.1](#101-pages-and-routing)). **Aldoria** was painted in the editor. The
+other three are **written as code** and turned into ordinary project files: **The Four Nations** (the world of
+*Avatar: The Last Airbender*), **Westeros & Essos** (*Game of Thrones*) and **Middle-earth** (*The Lord of the Rings*).
+They are simplified fan tributes drawn from memory, not official maps; the names belong to their owners. The app never
+imports the generator; it only ships the files the generator writes.
+
+| File | Role |
+|------|------|
+| `client/public/samples/<slug>.wondermap.json` | The map as the editor opens it. Generated and committed, never edited by hand. Fetched when a card is pressed |
+| `client/public/samples/<slug>.jpg` | The picture on the card (720 px wide), drawn by the editor's engine in a headless browser |
+| `client/src/pages/home/examples.ts` | What the title screen shows: `slug`, name and the sentence under it. The same `slug` names the two files above |
+| `client/src/devtools/samples/maps/<name>.ts` | One map: a function that creates a `MapBuilder`, describes the world and returns `build()` |
+| `client/src/devtools/samples/MapBuilder.ts` | The builder (below) |
+| `client/src/devtools/samples/` `geometry`, `terrainFill`, `distanceField`, `regions`, `occupancy`, `labelExtent` | Its helpers: outlines that are smoothed and wobbled like a coast, filling an outline into the terrain grid, distance to the coast, scatter areas and ridges, a spatial hash with keep-out zones, and an estimate of how wide a name is |
+| `client/src/devtools/samples/index.ts` | `sampleGenerators` (the slug of each generated map and its build function) and `generateSample(slug)`, which returns `{ doc, json, warnings }` |
+| `client/src/devtools/samples/preview.ts` | Browser only: `renderPreview` (a picture of a map, or of a part of it, made by the export engine) and `inspectMap` (counts, and how wide each name really is) |
+| `tools/samples.mjs` | The runner |
+
+**The builder.** `new MapBuilder({ id, name, width, height, themeId, frameId, seed, unit })` starts as open sea and takes a
+description in map pixels. `land`, `island`, `paint`, `lake` and `band` shape the terrain: an outline is smoothed and pushed
+sideways by layered noise, so coasts look natural. `place`, `site` (a town or castle together with its name), `label` and
+`path` (rivers and roads wander) add things, and `scatter` sprays symbols over an area, a `ridge` or a strip along a line,
+using a catalog brush for the symbols, their spacing and their size. The scatters run **last, inside `build()`**, once
+every town, name, river and road is known, so they keep out of them (a landmark keeps a share of its drawing box clear, and
+a name or a road drops a share of what lies under it), and the symbols of different scatters keep their distance.
+`build()` returns the document and a list of **warnings** for what looks like a mistake: a symbol off the map, a town in
+the sea, a ship on land, a name that leaves the map. Use a builder once: building runs the scatters.
+
+**Deterministic.** Everything uses seeded noise (`combineSeed`); there is no `Math.random()` and no clock (the examples carry
+the fixed date `2025-01-01T00:00:00.000Z`), and coordinates are rounded. The same code makes the same bytes in Vite's
+server-side loader (what the runner uses) and in Vitest, which is what lets a unit test compare them with the files.
+
+**The run.** `npm run samples` starts the client's Vite server in its own process, like `tools/assets.mjs`
+([14.6](#146-the-asset-catalog-assetsmd)), loads the generators through it and writes the `.wondermap.json` files, then draws
+every thumbnail in the headless browser. A file is written only when its bytes changed. It exits with 1 when a builder
+reports warnings. Sub-commands:
+
+| Command | Does |
+|---------|------|
+| `npm run samples` | `build` followed by `thumbs` |
+| `npm run samples -- build [slug…]` | Only the `.wondermap.json` files of the generated maps |
+| `npm run samples -- thumbs [slug…]` | Only the thumbnails, of every map in `examples.ts` (also Aldoria's) |
+| `npm run samples -- preview <slug> [options]` | A picture for looking at while you write a map, saved in the system temp folder (`wondermap-samples`). Options: `--scale 1` (bitmap pixels per map pixel), `--crop x,y,w,h` (only that part, in map px), `--width 1600`, `--out file`, `--format jpeg --quality 0.85`, `--names` (the width of every name measured against what the builder guessed), `--theme parchment --frame ornate` (try another look), `--file map.wondermap.json` (show a file instead of generating the map) |
+
+**The tests** (`client/src/devtools/samples/`) run with `npm test`:
+
+- `samples.test.ts` keeps the registry honest: every card has its file and picture, every file has a card, the name in
+  each file is the one on its card, and ids are unique. For each generated map it checks that the committed file is
+  **byte for byte what the code makes** (the failure says to run `npm run samples`), that it opens and survives a
+  save-and-open round trip, that it is a rich showcase (enough symbols, kinds, names and paths), that it only uses ids
+  of the catalog and valid variants, and that every symbol, name and road is on the map. The files are read with
+  `import.meta.glob(…, '?raw')` because the client's TypeScript project has no Node types;
+- `MapBuilder.test.ts` and `helpers.test.ts` test the builder and its helpers on tiny maps (coasts, lakes, scatters that
+  keep off towns and roads, warnings, determinism).
+
+The thumbnails come from a browser, so only their existence is tested; a different browser version can encode them a few
+bytes differently. `aldoria.wondermap.json` is not generated and is covered by the asset guard of [14.6](#146-the-asset-catalog-assetsmd),
+which includes it in its fingerprint; the generated maps are not.
+
+**When to run it:** after changing a map file, `MapBuilder`, its helpers, or anything they use (symbol and brush ids
+and sizes in the catalog, the noise kit, the terrain layer or the document format). `npm test` fails until the result
+is committed.
+
 ## 15. Performance and limits
 
 | Topic | Design |
@@ -677,7 +750,7 @@ symbol,brush` is a quick way to look at the pictures first.
 | Undo | 100 steps, 160 MB of distinct terrain arrays |
 | Map size | 400–10 000 px per side, at most 40 MP (a 4800 × 3200 continent is 15 MP) |
 | Export | At most 64 MP per image, with progress and cancel |
-| Saving | The whole map is sent after 1.2 s of quiet (the 487-thing sample world is 85 KB, a typical map is well under 1 MB); the server accepts up to 40 MB |
+| Saving | The whole map is sent after 1.2 s of quiet (the 487-thing sample world is 85 KB, the 2,351-thing Middle-earth example 281 KB, a typical map is well under 1 MB); the server accepts up to 40 MB |
 | Bundle | About 1.06 MB of JavaScript (354 kB gzipped), mostly the generated art; code-splitting is on the [plan](PLAN.md) |
 
 ## 16. Extension recipes
@@ -691,6 +764,7 @@ symbol,brush` is a quick way to look at the pictures first.
 | Add a path style, label style, theme or frame | New file in the matching folder (labels: append to `labels/styles.ts`) |
 | Add a font | `npm i -w illustrations @fontsource/<name>`, import its CSS in `fonts/index.ts`, register it with `defineFont` |
 | Show a new kind of asset in `ASSETS.md` | Add the kind to `AssetKind`, `listAssets()` and `assetFile()` in `devtools/assetCatalog.ts`, a renderer to `devtools/assetImages.ts`, its section to `devtools/assetsDoc.ts` and the kind to `KINDS` in `tools/assets.mjs`; run `npm run assets` |
+| Add an example map | Write `client/src/devtools/samples/maps/<name>.ts` (a function that returns `new MapBuilder({…})` … `.build()`; copy `avatar.ts`), register it in `devtools/samples/index.ts` and add its card (`slug`, name, sentence) to `pages/home/examples.ts`. Look at it with `npm run samples -- preview <slug>` until it has no warnings, then run `npm run samples` and commit `client/public/samples/<slug>.wondermap.json` and `<slug>.jpg` ([14.7](#147-the-example-maps-npm-run-samples)). Add it to `GENERATED_EXAMPLES` in `e2e/tests/library.spec.ts` so that the browser tests open it too |
 | Add a tool | Write `createXTool()` in `client/src/tools/` and register it in `createTools()` (`tools/index.ts`); add its id to `ToolId` (`store/editorStore.ts`); add an entry to `TOOL_LIST` (`editor/toolInfo.ts`: name, icon, hotkey, texts; the rail and the hotkeys read it); add a panel in `editor/panels/` and a `case` in `ToolPanel.tsx` |
 | Add a field to the document | Add it to `model/types.ts`, give it a default in `createDocument`, read it defensively in `parseDocument`, bump `SCHEMA_VERSION` if old files need a migration, and cover it in `document.test.ts` |
 | Add an API endpoint | A router in `server/src/routes/`, mounted in `app.ts`, with a test in `server/tests/` |
